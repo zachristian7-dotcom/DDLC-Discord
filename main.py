@@ -9,7 +9,7 @@ from discord.ext import commands
 
 from config import AI_BASE_URL, AI_MODEL, CHARACTER_TOKENS, COMMAND_PREFIX
 from engine.conversation import AIUnavailableError, generate_reply
-from engine.memory import initialize_database, save_message
+from engine.memory import delete_memory, get_memories, initialize_database, save_memory, save_message
 from engine.personality import load_character
 
 logging.basicConfig(
@@ -38,7 +38,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
 
         async with channel.typing():
             try:
-                reply = await generate_reply(character_name, user_text)
+                reply = await generate_reply(character_name, user_text, str(author.id))
             except AIUnavailableError:
                 await channel.send(
                     "I'm online, but my AI connection hasn't been configured yet."
@@ -51,8 +51,8 @@ def create_character_bot(character_name: str) -> commands.Bot:
                 )
                 return
 
-        save_message(character_name, str(author), user_text)
-        save_message(character_name, display_name, reply)
+        save_message(character_name, str(author), user_text, str(author.id))
+        save_message(character_name, display_name, reply, str(author.id))
         await channel.send(reply[:1900])
 
     @bot.event
@@ -72,11 +72,45 @@ def create_character_bot(character_name: str) -> commands.Bot:
     async def chat_command(ctx, *, message=""):
         await respond(ctx.channel, ctx.author, message)
 
+    @bot.command(name="remember")
+    async def remember_command(ctx, *, fact=""):
+        fact = fact.strip()
+        if not fact:
+            await ctx.reply(f"Tell me what to remember! Example: {COMMAND_PREFIX}remember my favorite color is blue.", mention_author=False)
+            return
+        if len(fact) > 300:
+            await ctx.reply("Could you shorten that to 300 characters or fewer?", mention_author=False)
+            return
+        memory_id = save_memory(character_name, str(ctx.author.id), "user_fact", fact)
+        await ctx.reply(f"Got it! I'll remember that. (Memory #{memory_id})", mention_author=False)
+
+    @bot.command(name="memories")
+    async def memories_command(ctx):
+        memories = get_memories(character_name, str(ctx.author.id), limit=20)
+        if not memories:
+            await ctx.reply("I don't have any saved memories about you yet. Try !remember <fact>!", mention_author=False)
+            return
+        lines = [f"**#{memory_id}** — {content}" for memory_id, _category, content, _timestamp in memories]
+        await ctx.reply("Here's what I remember about you:\\n" + "\\n".join(lines), mention_author=False)
+
+    @bot.command(name="forget")
+    async def forget_command(ctx, memory_id: int = 0):
+        if memory_id <= 0:
+            await ctx.reply(f"Give me a memory number. Use {COMMAND_PREFIX}memories to see them.", mention_author=False)
+            return
+        if delete_memory(memory_id, str(ctx.author.id)):
+            await ctx.reply("Okay! I've removed that saved memory.", mention_author=False)
+        else:
+            await ctx.reply("I couldn't find one of your memories with that number.", mention_author=False)
+
     @bot.command(name="help")
     async def help_command(ctx):
         await ctx.reply(
             f"**{display_name}**\n"
             f"{COMMAND_PREFIX}chat <message> — talk to {display_name}\n"
+            f"{COMMAND_PREFIX}remember <fact> — save something for me to remember\n"
+            f"{COMMAND_PREFIX}memories — see what I've saved about you\n"
+            f"{COMMAND_PREFIX}forget <number> — delete one of your saved memories\n"
             f"You can also mention me followed by a message.",
             mention_author=False,
         )
