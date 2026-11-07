@@ -108,27 +108,36 @@ def create_character_bot(character_name: str) -> commands.Bot:
 
 
 async def main():
+    active_tokens = {
+        name: token
+        for name, token in CHARACTER_TOKENS.items()
+        if token
+    }
+    if not active_tokens:
+        raise RuntimeError(
+            "No Discord bot tokens configured. Add at least SAYORI_TOKEN "
+            "as an environment variable in Render."
+        )
+
     missing = [
-        name for name, token in CHARACTER_TOKENS.items()
+        name.title() for name, token in CHARACTER_TOKENS.items()
         if not token
     ]
     if missing:
-        names = ", ".join(name.title() for name in missing)
-        raise RuntimeError(
-            "Missing Discord bot token(s) for: "
-            f"{names}. Add the matching environment variables in Render."
+        logger.info(
+            "Not starting these characters yet (tokens not configured): %s",
+            ", ".join(missing),
         )
 
     initialize_database()
     bots = {
         name: create_character_bot(name)
-        for name in CHARACTER_TOKENS
+        for name in active_tokens
     }
 
     await asyncio.gather(
-        *(bots[name].start(token) for name, token in CHARACTER_TOKENS.items())
+        *(bots[name].start(token) for name, token in active_tokens.items())
     )
-
 
 if __name__ == "__main__":
     asyncio.run(main())
