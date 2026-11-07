@@ -60,8 +60,6 @@ async def talk_to_character(ctx, character: str, message: str):
 
     user_text = message.strip()
     display_name = load_character(character)["name"]
-    save_message(character, str(ctx.author), user_text)
-
     async with ctx.typing():
         try:
             reply = await generate_reply(character, user_text)
@@ -81,6 +79,7 @@ async def talk_to_character(ctx, character: str, message: str):
             )
             return
 
+    save_message(character, str(ctx.author), user_text)
     save_message(character, display_name, reply)
     await ctx.reply(f"**{display_name}:** {reply}", mention_author=False)
 
