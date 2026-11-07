@@ -5,7 +5,8 @@ from discord.ext import commands
 
 from config import AI_BASE_URL, AI_MODEL, CHARACTERS, COMMAND_PREFIX, DISCORD_TOKEN
 from engine.conversation import AIUnavailableError, generate_reply
-from engine.memory import initialize_database
+from engine.memory import initialize_database, save_message
+from engine.personality import load_character
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,9 +58,13 @@ async def talk_to_character(ctx, character: str, message: str):
         )
         return
 
+    user_text = message.strip()
+    display_name = load_character(character)["name"]
+    save_message(character, str(ctx.author), user_text)
+
     async with ctx.typing():
         try:
-            reply = await generate_reply(character, message.strip())
+            reply = await generate_reply(character, user_text)
         except AIUnavailableError:
             await ctx.reply(
                 "I'm online, but the AI connection hasn't been set up yet. "
@@ -76,7 +81,8 @@ async def talk_to_character(ctx, character: str, message: str):
             )
             return
 
-    await ctx.reply(f"**{character.title()}:** {reply}", mention_author=False)
+    save_message(character, display_name, reply)
+    await ctx.reply(f"**{display_name}:** {reply}", mention_author=False)
 
 
 def make_character_command(character_name):
