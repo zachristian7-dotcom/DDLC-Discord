@@ -8,6 +8,7 @@ frozenlist==1.8.0
 idna==3.20
 multidict==6.7.1
 propcache==0.4.1
+psycopg[binary]>=3.2,<4
 python-dotenv==1.2.1
 typing-extensions==4.16.0
 yarl==1.22.0
