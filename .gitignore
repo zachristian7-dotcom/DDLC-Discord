@@ -1,0 +1,19 @@
+# Python environment
+venv/
+.venv/
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# Secret credentials
+.env
+.env.*
+
+# Character memory database
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Editor files
+.vscode/
