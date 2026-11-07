@@ -1,16 +1,21 @@
 import aiohttp
 
 from config import AI_API_KEY, AI_BASE_URL, AI_MODEL
-from engine.memory import get_recent_messages
+from engine.memory import get_memories, get_recent_messages
 from engine.personality import load_character
 
 
-def _offline_reply(character_name: str, user_message: str) -> str:
+def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
     """Return a simple character-flavored reply when no AI provider is configured."""
     character = load_character(character_name)
     name = character["name"]
     message = user_message.lower()
     interests = character.get("interests", [])
+    if any(phrase in message for phrase in ("what do you remember", "what have you remembered", "what do you know about me")):
+        if memories:
+            facts = "\n".join(f"- {item[2]}" for item in memories[:10])
+            return f"Of course! Here are some things you've told me:\n{facts}"
+        return "Hmm, I don't have any saved memories about you yet. You can tell me something with `!remember <fact>`!"
     interest = interests[0].lower() if interests else "chatting"
 
     words = set(__import__("re").findall(r"\\b[\\w]+\\b", message))
@@ -60,10 +65,11 @@ class AIUnavailableError(Exception):
     """Raised when no AI provider has been configured."""
 
 
-async def generate_reply(character_name: str, user_message: str) -> str:
+async def generate_reply(character_name: str, user_message: str, user_id: str) -> str:
     """Generate an AI reply, or a simple character-specific reply in offline mode."""
+    memories = get_memories(character_name, user_id, limit=20)
     if not AI_BASE_URL or not AI_MODEL:
-        return _offline_reply(character_name, user_message)
+        return _offline_reply(character_name, user_message, memories)
 
     character = load_character(character_name)
     personality = "\n".join(f"- {item}" for item in character["personality"])
@@ -82,7 +88,10 @@ async def generate_reply(character_name: str, user_message: str) -> str:
         "Keep replies concise unless the user asks for detail."
     )
 
-    history = get_recent_messages(character_name, limit=12)
+    history = get_recent_messages(character_name, user_id, limit=12)
+    if memories:
+        saved_facts = "\n".join(f"- {item[2]}" for item in memories[:20])
+        system_prompt += f"\n\nThings this user has explicitly asked you to remember:\n{saved_facts}"
     messages = [{"role": "system", "content": system_prompt}]
     for speaker, content, _timestamp in history:
         role = "assistant" if speaker == character["name"] else "user"
