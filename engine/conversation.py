@@ -18,7 +18,7 @@ def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
         return "Hmm, I don't have any saved memories about you yet. You can tell me something with `!remember <fact>`!"
     interest = interests[0].lower() if interests else "chatting"
 
-    words = set(__import__("re").findall(r"\\b[\\w]+\\b", message))
+    words = set(__import__("re").findall(r"\b[\w]+\b", message))
     if words.intersection({"hello", "hi", "hey", "hiya", "yo"}):
         if character_name == "sayori":
             return "Hiiii!! It's so nice to see you! What's up? c:"
