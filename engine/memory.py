@@ -1,47 +1,91 @@
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
 DB_PATH = Path(__file__).parent.parent / "data" / "ddlc_memory.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USE_POSTGRES = bool(DATABASE_URL)
 
 
 def get_connection():
+    if USE_POSTGRES:
+        import psycopg
+        # Supabase transaction poolers may not support server-side prepared statements.
+        return psycopg.connect(
+            DATABASE_URL,
+            sslmode="require",
+            prepare_threshold=None,
+        )
+
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(DB_PATH)
 
 
+def _sql(statement):
+    """Use the placeholder style required by the selected database."""
+    return statement.replace("?", "%s") if USE_POSTGRES else statement
+
+
 def initialize_database():
     with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                character TEXT NOT NULL,
-                speaker TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT ''
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                character TEXT NOT NULL,
-                category TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT ''
-            )
-        """)
-
-        # Upgrade databases created by earlier versions without losing data.
-        for table in ("messages", "memories"):
-            columns = {
-                row[1] for row in conn.execute(f"PRAGMA table_info({table})")
-            }
-            if "user_id" not in columns:
-                conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"
+        if USE_POSTGRES:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id BIGSERIAL PRIMARY KEY,
+                    character TEXT NOT NULL,
+                    speaker TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT ''
                 )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    id BIGSERIAL PRIMARY KEY,
+                    character TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT ''
+                )
+            """)
+            for table in ("messages", "memories"):
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                    "user_id TEXT NOT NULL DEFAULT ''"
+                )
+        else:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    character TEXT NOT NULL,
+                    speaker TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT ''
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    character TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT ''
+                )
+            """)
+
+            # Upgrade older local databases without losing existing data.
+            for table in ("messages", "memories"):
+                columns = {
+                    row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+                }
+                if "user_id" not in columns:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"
+                    )
 
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_messages_character_user
@@ -57,11 +101,11 @@ def save_message(character, speaker, content, user_id):
     timestamp = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         conn.execute(
-            """
-            INSERT INTO messages
-            (character, speaker, content, timestamp, user_id)
-            VALUES (?, ?, ?, ?, ?)
-            """,
+            _sql("""
+                INSERT INTO messages
+                (character, speaker, content, timestamp, user_id)
+                VALUES (?, ?, ?, ?, ?)
+            """),
             (character.lower(), speaker, content, timestamp, str(user_id))
         )
 
@@ -69,13 +113,13 @@ def save_message(character, speaker, content, user_id):
 def get_recent_messages(character, user_id, limit=20):
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT speaker, content, timestamp
-            FROM messages
-            WHERE character = ? AND user_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
+            _sql("""
+                SELECT speaker, content, timestamp
+                FROM messages
+                WHERE character = ? AND user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            """),
             (character.lower(), str(user_id), limit)
         ).fetchall()
     return list(reversed(rows))
@@ -85,26 +129,30 @@ def save_memory(character, user_id, category, content):
     timestamp = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         cursor = conn.execute(
-            """
-            INSERT INTO memories
-            (character, category, content, timestamp, user_id)
-            VALUES (?, ?, ?, ?, ?)
-            """,
+            _sql("""
+                INSERT INTO memories
+                (character, category, content, timestamp, user_id)
+                VALUES (?, ?, ?, ?, ?)
+            """),
             (character.lower(), category, content, timestamp, str(user_id))
         )
+        if USE_POSTGRES:
+            # Fetch the generated ID from PostgreSQL.
+            row = conn.execute("SELECT currval(pg_get_serial_sequence('memories', 'id'))").fetchone()
+            return row[0]
         return cursor.lastrowid
 
 
 def get_memories(character, user_id, limit=50):
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT id, category, content, timestamp
-            FROM memories
-            WHERE character = ? AND user_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
+            _sql("""
+                SELECT id, category, content, timestamp
+                FROM memories
+                WHERE character = ? AND user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            """),
             (character.lower(), str(user_id), limit)
         ).fetchall()
     return rows
@@ -113,7 +161,7 @@ def get_memories(character, user_id, limit=50):
 def delete_memory(memory_id, user_id):
     with get_connection() as conn:
         cursor = conn.execute(
-            "DELETE FROM memories WHERE id = ? AND user_id = ?",
+            _sql("DELETE FROM memories WHERE id = ? AND user_id = ?"),
             (memory_id, str(user_id))
         )
         return cursor.rowcount > 0
@@ -121,4 +169,5 @@ def delete_memory(memory_id, user_id):
 
 if __name__ == "__main__":
     initialize_database()
-    print("Literature Club memory database initialized!")
+    backend = "Supabase PostgreSQL" if USE_POSTGRES else "local SQLite"
+    print(f"Literature Club memory database initialized ({backend})!")
