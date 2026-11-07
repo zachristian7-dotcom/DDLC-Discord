@@ -3,6 +3,7 @@ import logging
 import re
 
 import discord
+from aiohttp import web
 from discord.ext import commands
 
 from config import AI_BASE_URL, AI_MODEL, CHARACTER_TOKENS, COMMAND_PREFIX
@@ -107,6 +108,28 @@ def create_character_bot(character_name: str) -> commands.Bot:
     return bot
 
 
+async def health_check(request):
+    return web.Response(text="DDLC Discord bot service is running.")
+
+
+async def start_health_server():
+    # Render Web Services must listen on the port supplied in the PORT variable.
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    app.router.add_get("/health", health_check)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        host="0.0.0.0",
+        port=int(__import__("os").environ.get("PORT", "10000")),
+    )
+    await site.start()
+    logger.info("Health-check web server is listening.")
+    return runner
+
+
 async def main():
     active_tokens = {
         name: token
@@ -130,14 +153,18 @@ async def main():
         )
 
     initialize_database()
+    health_runner = await start_health_server()
     bots = {
         name: create_character_bot(name)
         for name in active_tokens
     }
 
-    await asyncio.gather(
-        *(bots[name].start(token) for name, token in active_tokens.items())
-    )
+    try:
+        await asyncio.gather(
+            *(bots[name].start(token) for name, token in active_tokens.items())
+        )
+    finally:
+        await health_runner.cleanup()
 
 if __name__ == "__main__":
     asyncio.run(main())
