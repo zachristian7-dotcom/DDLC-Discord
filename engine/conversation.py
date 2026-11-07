@@ -65,7 +65,7 @@ async def generate_reply(character_name: str, user_message: str) -> str:
         return _offline_reply(character_name, user_message)
 
     character = load_character(character_name)
-    personality = "\\n".join(f"- {item}" for item in character["personality"])
+    personality = "\n".join(f"- {item}" for item in character["personality"])
     interests = ", ".join(character.get("interests", []))
     style = character.get("chat_style", {}).get("tone", "natural")
 
@@ -74,10 +74,10 @@ async def generate_reply(character_name: str, user_message: str) -> str:
         "Stay in character, but do not claim to be a real person. "
         "Keep the conversation friendly and suitable for a general teen audience. "
         "Do not produce sexual content, graphic violence, or instructions for harm. "
-        "Respond naturally and avoid narrating actions in every message.\\n\\n"
-        f"Personality:\\n{personality}\\n"
-        f"Interests: {interests}\\n"
-        f"Speaking style: {style}\\n"
+        "Respond naturally and avoid narrating actions in every message.\n\n"
+        f"Personality:\n{personality}\n"
+        f"Interests: {interests}\n"
+        f"Speaking style: {style}\n"
         "Keep replies concise unless the user asks for detail."
     )
 
