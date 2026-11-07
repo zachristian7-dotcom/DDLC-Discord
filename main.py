@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import re
 
 import discord
@@ -123,7 +124,7 @@ async def start_health_server():
     site = web.TCPSite(
         runner,
         host="0.0.0.0",
-        port=int(__import__("os").environ.get("PORT", "10000")),
+        port=int(os.environ.get("PORT", "10000")),
     )
     await site.start()
     logger.info("Health-check web server is listening.")
