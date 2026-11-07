@@ -91,7 +91,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
             await ctx.reply("I don't have any saved memories about you yet. Try !remember <fact>!", mention_author=False)
             return
         lines = [f"**#{memory_id}** — {content}" for memory_id, _category, content, _timestamp in memories]
-        await ctx.reply("Here's what I remember about you:\\n" + "\\n".join(lines), mention_author=False)
+        await ctx.reply("Here's what I remember about you:\n" + "\n".join(lines), mention_author=False)
 
     @bot.command(name="forget")
     async def forget_command(ctx, memory_id: int = 0):
