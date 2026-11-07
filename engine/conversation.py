@@ -1,6 +1,7 @@
 import aiohttp
 
 from config import AI_API_KEY, AI_BASE_URL, AI_MODEL
+from engine.memory import get_recent_messages
 from engine.personality import load_character
 
 
@@ -30,16 +31,20 @@ async def generate_reply(character_name: str, user_message: str) -> str:
         "Keep replies concise unless the user asks for detail."
     )
 
+    history = get_recent_messages(character_name, limit=12)
+    messages = [{"role": "system", "content": system_prompt}]
+    for speaker, content, _timestamp in history:
+        role = "assistant" if speaker == character["name"] else "user"
+        messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_message})
+
     headers = {"Content-Type": "application/json"}
     if AI_API_KEY:
         headers["Authorization"] = f"Bearer {AI_API_KEY}"
 
     payload = {
         "model": AI_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
+        "messages": messages,
         "temperature": 0.85,
         "max_tokens": 220,
     }
