@@ -7,7 +7,7 @@ import discord
 from aiohttp import web
 from discord.ext import commands
 
-from config import AI_BASE_URL, AI_MODEL, CHARACTER_TOKENS, COMMAND_PREFIX
+from config import AI_BASE_URL, AI_MODEL, CHARACTER_TOKENS
 from engine.conversation import AIUnavailableError, generate_reply
 from engine.memory import delete_memory, get_memories, initialize_database, save_memory, save_message
 from engine.personality import load_character
@@ -25,8 +25,15 @@ intents.message_content = True
 def create_character_bot(character_name: str) -> commands.Bot:
     character = load_character(character_name)
     display_name = character["name"]
+    prefixes = {
+        "sayori": "!s ",
+        "natsuki": "!n ",
+        "yuri": "!y ",
+        "monika": "!m ",
+    }
+    prefix = prefixes[character_name.lower()]
     bot = commands.Bot(
-        command_prefix=COMMAND_PREFIX,
+        command_prefix=prefix,
         intents=intents,
         help_command=None,
     )
@@ -76,7 +83,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
     async def remember_command(ctx, *, fact=""):
         fact = fact.strip()
         if not fact:
-            await ctx.reply(f"Tell me what to remember! Example: {COMMAND_PREFIX}remember my favorite color is blue.", mention_author=False)
+            await ctx.reply(f"Tell me what to remember! Example: {prefix}remember my favorite color is blue.", mention_author=False)
             return
         if len(fact) > 300:
             await ctx.reply("Could you shorten that to 300 characters or fewer?", mention_author=False)
@@ -88,7 +95,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
     async def memories_command(ctx):
         memories = get_memories(character_name, str(ctx.author.id), limit=20)
         if not memories:
-            await ctx.reply("I don't have any saved memories about you yet. Try !remember <fact>!", mention_author=False)
+            await ctx.reply(f"I don't have any saved memories about you yet. Try {prefix}remember <fact>!", mention_author=False)
             return
         lines = [f"**#{memory_id}** — {content}" for memory_id, _category, content, _timestamp in memories]
         await ctx.reply("Here's what I remember about you:\n" + "\n".join(lines), mention_author=False)
@@ -96,9 +103,9 @@ def create_character_bot(character_name: str) -> commands.Bot:
     @bot.command(name="forget")
     async def forget_command(ctx, memory_id: int = 0):
         if memory_id <= 0:
-            await ctx.reply(f"Give me a memory number. Use {COMMAND_PREFIX}memories to see them.", mention_author=False)
+            await ctx.reply(f"Give me a memory number. Use {prefix}memories to see them.", mention_author=False)
             return
-        if delete_memory(memory_id, str(ctx.author.id)):
+        if delete_memory(character_name, memory_id, str(ctx.author.id)):
             await ctx.reply("Okay! I've removed that saved memory.", mention_author=False)
         else:
             await ctx.reply("I couldn't find one of your memories with that number.", mention_author=False)
@@ -107,10 +114,10 @@ def create_character_bot(character_name: str) -> commands.Bot:
     async def help_command(ctx):
         await ctx.reply(
             f"**{display_name}**\n"
-            f"{COMMAND_PREFIX}chat <message> — talk to {display_name}\n"
-            f"{COMMAND_PREFIX}remember <fact> — save something for me to remember\n"
-            f"{COMMAND_PREFIX}memories — see what I've saved about you\n"
-            f"{COMMAND_PREFIX}forget <number> — delete one of your saved memories\n"
+            f"{prefix}chat <message> — talk to {display_name}\n"
+            f"{prefix}remember <fact> — save something for me to remember\n"
+            f"{prefix}memories — see what I've saved about you\n"
+            f"{prefix}forget <number> — delete one of your saved memories\n"
             f"You can also mention me followed by a message.",
             mention_author=False,
         )
