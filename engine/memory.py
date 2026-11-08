@@ -158,11 +158,11 @@ def get_memories(character, user_id, limit=50):
     return rows
 
 
-def delete_memory(memory_id, user_id):
+def delete_memory(character, memory_id, user_id):
     with get_connection() as conn:
         cursor = conn.execute(
-            _sql("DELETE FROM memories WHERE id = ? AND user_id = ?"),
-            (memory_id, str(user_id))
+            _sql("DELETE FROM memories WHERE character = ? AND id = ? AND user_id = ?"),
+            (character.lower(), memory_id, str(user_id))
         )
         return cursor.rowcount > 0
 
