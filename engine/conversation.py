@@ -5,6 +5,21 @@ from engine.memory import get_memories, get_recent_messages
 from engine.personality import load_character
 
 
+def _format_profile_section(title: str, value) -> str:
+    """Format a character-profile field for the AI system prompt."""
+    if not value:
+        return ""
+
+    if isinstance(value, dict):
+        lines = [f"- {name}: {description}" for name, description in value.items()]
+    elif isinstance(value, (list, tuple)):
+        lines = [f"- {item}" for item in value]
+    else:
+        return f"{title}: {value}"
+
+    return f"{title}:\n" + "\n".join(lines)
+
+
 def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
     """Return a simple character-flavored reply when no AI provider is configured."""
     character = load_character(character_name)
@@ -72,19 +87,33 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
         return _offline_reply(character_name, user_message, memories)
 
     character = load_character(character_name)
-    personality = "\n".join(f"- {item}" for item in character["personality"])
-    interests = ", ".join(character.get("interests", []))
-    style = character.get("chat_style", {}).get("tone", "natural")
+    chat_style = character.get("chat_style", {})
+    profile_sections = [
+        _format_profile_section("Canon role", character.get("canon_role")),
+        _format_profile_section("Personality", character.get("personality")),
+        _format_profile_section("Interests", character.get("interests")),
+        _format_profile_section("Speaking style", chat_style.get("tone")),
+        _format_profile_section("Typical message length", chat_style.get("message_length")),
+        _format_profile_section("Emoji use", chat_style.get("emojis")),
+        _format_profile_section("Typing habits", chat_style.get("typing_habits")),
+        _format_profile_section("Speech patterns", character.get("speech_patterns")),
+        _format_profile_section("Relationships with the other club members", character.get("relationships")),
+        _format_profile_section("Conversation guidelines", character.get("conversation_guidelines")),
+        _format_profile_section("Canon context", character.get("canon_context")),
+    ]
+    profile = "\n\n".join(section for section in profile_sections if section)
 
     system_prompt = (
         f"You are {character['name']} from Doki Doki Literature Club. "
+        "Portray the character faithfully using the profile below. "
         "Stay in character, but do not claim to be a real person. "
         "Keep the conversation friendly and suitable for a general teen audience. "
         "Do not produce sexual content, graphic violence, or instructions for harm. "
-        "Respond naturally and avoid narrating actions in every message.\n\n"
-        f"Personality:\n{personality}\n"
-        f"Interests: {interests}\n"
-        f"Speaking style: {style}\n"
+        "Treat sensitive emotional topics with care and do not romanticize suffering. "
+        "Respond naturally and avoid narrating actions in every message. "
+        "The profile describes tendencies, not rules that must appear in every reply; "
+        "vary your wording and let the conversation develop naturally.\n\n"
+        f"{profile}\n\n"
         "Keep replies concise unless the user asks for detail."
     )
 
