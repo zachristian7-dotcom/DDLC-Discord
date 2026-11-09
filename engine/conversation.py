@@ -367,7 +367,7 @@ async def generate_reply(
     style_guidance = _build_user_style_guidance(
         user_style_samples, user_message, character_name
     )
-    system_prompt += f"\\n\\n{style_guidance}"
+    system_prompt += f"\n\n{style_guidance}"
     if memories:
         saved_facts = "\n".join(f"- {item[2]}" for item in memories[:20])
         system_prompt += f"\n\nThings this user has explicitly asked you to remember:\n{saved_facts}"
