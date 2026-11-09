@@ -24,7 +24,7 @@ def select_participants(message_id, available, addressed, message, profiles, max
     selection, while a message-ID seed keeps every bot's decision identical.
     """
     available = list(dict.fromkeys(name.lower() for name in available))
-    addressed = [name.lower() for name in addressed if name.lower() in available]
+    addressed = sorted({name.lower() for name in addressed if name.lower() in available})
     if not available:
         return []
 
