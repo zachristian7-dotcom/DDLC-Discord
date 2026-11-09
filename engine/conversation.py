@@ -292,9 +292,18 @@ async def generate_reply(
 
     messages = [{"role": "system", "content": system_prompt}]
     for speaker, content, _timestamp in history:
-        role = "assistant" if speaker == character["name"] else "user"
-        messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": user_message})
+        if speaker == character["name"]:
+            messages.append({"role": "assistant", "content": content})
+        else:
+            # Label the actual speaker so another doki's words are never
+            # mistaken for the user's words or the current character's voice.
+            messages.append({
+                "role": "user",
+                "content": f"[{speaker} in the club chat]: {content}",
+            })
+    # Channel history already contains the incoming message; avoid duplicating it.
+    if not channel_id:
+        messages.append({"role": "user", "content": user_message})
 
     headers = {"Content-Type": "application/json"}
 
