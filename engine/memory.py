@@ -153,6 +153,24 @@ def get_recent_messages(character, user_id, limit=20):
 
 
 
+def get_recent_user_messages(user_id, limit=20):
+    """Return distinct recent user-authored messages across character conversations."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            _sql("""
+                SELECT content, MAX(timestamp) AS latest
+                FROM messages
+                WHERE user_id = ?
+                  AND LOWER(speaker) NOT IN ('sayori', 'natsuki', 'yuri', 'monika')
+                GROUP BY content
+                ORDER BY latest DESC
+                LIMIT ?
+            """),
+            (str(user_id), int(limit))
+        ).fetchall()
+    return [row[0] for row in reversed(rows)]
+
+
 def save_club_event(event_id, channel_id, speaker, content):
     """Save one channel-visible event once, even though all four bots see it."""
     timestamp = datetime.now(timezone.utc).isoformat()
