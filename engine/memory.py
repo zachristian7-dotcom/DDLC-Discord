@@ -50,6 +50,19 @@ def initialize_database():
                     user_id TEXT NOT NULL DEFAULT ''
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS club_events (
+                    event_id TEXT PRIMARY KEY,
+                    channel_id TEXT NOT NULL,
+                    speaker TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_club_events_channel
+                ON club_events(channel_id, timestamp)
+            """)
             for table in ("messages", "memories"):
                 conn.execute(
                     f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
@@ -75,6 +88,20 @@ def initialize_database():
                     timestamp TEXT NOT NULL,
                     user_id TEXT NOT NULL DEFAULT ''
                 )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS club_events (
+                    event_id TEXT PRIMARY KEY,
+                    channel_id TEXT NOT NULL,
+                    speaker TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_club_events_channel
+                ON club_events(channel_id, timestamp)
             """)
 
             # Upgrade older local databases without losing existing data.
@@ -121,6 +148,38 @@ def get_recent_messages(character, user_id, limit=20):
                 LIMIT ?
             """),
             (character.lower(), str(user_id), limit)
+        ).fetchall()
+    return list(reversed(rows))
+
+
+
+def save_club_event(event_id, channel_id, speaker, content):
+    """Save one channel-visible event once, even though all four bots see it."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            _sql("""
+                INSERT INTO club_events
+                (event_id, channel_id, speaker, content, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO NOTHING
+            """),
+            (str(event_id), str(channel_id), str(speaker), str(content), timestamp)
+        )
+
+
+def get_recent_club_events(channel_id, limit=16):
+    """Return shared, channel-visible conversation context in chronological order."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            _sql("""
+                SELECT speaker, content, timestamp
+                FROM club_events
+                WHERE channel_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """),
+            (str(channel_id), int(limit))
         ).fetchall()
     return list(reversed(rows))
 
