@@ -182,21 +182,43 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
 
     if cloudflare_configured:
         result = data.get("result") or {}
-        reply_value = result.get("response")
+
+        # Workers AI may return either its native {response: "..."} shape
+        # or a chat-completions shape with choices[0].message.content.
+        reply_value = result.get("response") if isinstance(result, dict) else None
+
+        if not isinstance(reply_value, str):
+            choices = result.get("choices", []) if isinstance(result, dict) else []
+            first_choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+            message = first_choice.get("message") or {}
+            reply_value = message.get("content") if isinstance(message, dict) else None
+
         if isinstance(reply_value, str):
             reply = reply_value.strip()
+        elif isinstance(reply_value, list):
+            reply = " ".join(
+                part.get("text", "")
+                for part in reply_value
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            ).strip()
         else:
             result_keys = (
                 ", ".join(result.keys()) if isinstance(result, dict)
                 else f"<{type(result).__name__}>"
             )
-            response_type = type(reply_value).__name__
+            choices = result.get("choices", []) if isinstance(result, dict) else []
+            first_choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+            message = first_choice.get("message") or {}
+            message_keys = (
+                ", ".join(message.keys()) if isinstance(message, dict)
+                else f"<{type(message).__name__}>"
+            )
+            finish_reason = first_choice.get("finish_reason")
             usage = result.get("usage") if isinstance(result, dict) else None
             raise RuntimeError(
-                "Cloudflare returned an unexpected response structure. "
-                f"Top-level fields: {', '.join(data.keys())}; "
-                f"result fields: {result_keys}; "
-                f"response type: {response_type}; usage: {usage}"
+                "Cloudflare returned no user-facing text. "
+                f"result fields: {result_keys}; message fields: {message_keys}; "
+                f"finish reason: {finish_reason}; usage: {usage}"
             )
     else:
         try:
