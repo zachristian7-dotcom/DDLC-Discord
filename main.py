@@ -16,7 +16,7 @@ from config import (
     CLOUDFLARE_API_TOKEN,
 )
 from engine.conversation import AIUnavailableError, generate_reply
-from engine.memory import delete_memory, get_memories, initialize_database, save_memory, save_message
+from engine.memory import delete_memory, get_memories, initialize_database, save_club_event, save_memory, save_message
 from engine.participation import select_participants
 from engine.personality import load_character
 
@@ -62,6 +62,7 @@ def create_character_bot(character_name: str, active_character_names: list[str])
                     str(author.id),
                     interaction_role=interaction_role,
                     other_responders=other_responders or [],
+                    channel_id=str(channel.id),
                 )
             except AIUnavailableError:
                 error_text = "I'm online, but my AI connection hasn't been configured yet."
@@ -82,9 +83,13 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         save_message(character_name, str(author), user_text, str(author.id))
         save_message(character_name, display_name, reply, str(author.id))
         if reply_to is not None:
-            await reply_to.reply(reply[:1900], mention_author=False)
+            save_club_event(str(reply_to.id), str(channel.id), str(author), user_text)
+            sent_message = await reply_to.reply(reply[:1900], mention_author=False)
         else:
-            await channel.send(reply[:1900])
+            sent_message = await channel.send(reply[:1900])
+        save_club_event(
+            str(sent_message.id), str(channel.id), display_name, reply[:1900]
+        )
 
     @bot.event
     async def on_ready():
