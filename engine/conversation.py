@@ -150,7 +150,10 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
         payload = {
             "messages": messages,
             "temperature": 0.85,
-            "max_tokens": 220,
+            "max_tokens": 300,
+            # Gemma 4 enables reasoning by default. Disable it for concise,
+            # direct character dialogue so the output budget is used for the reply.
+            "chat_template_kwargs": {"enable_thinking": False},
         }
     else:
         api_url = f"{AI_BASE_URL}/chat/completions"
