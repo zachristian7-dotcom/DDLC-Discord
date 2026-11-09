@@ -186,9 +186,17 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
         if isinstance(reply_value, str):
             reply = reply_value.strip()
         else:
+            result_keys = (
+                ", ".join(result.keys()) if isinstance(result, dict)
+                else f"<{type(result).__name__}>"
+            )
+            response_type = type(reply_value).__name__
+            usage = result.get("usage") if isinstance(result, dict) else None
             raise RuntimeError(
                 "Cloudflare returned an unexpected response structure. "
-                f"Top-level fields: {', '.join(data.keys())}"
+                f"Top-level fields: {', '.join(data.keys())}; "
+                f"result fields: {result_keys}; "
+                f"response type: {response_type}; usage: {usage}"
             )
     else:
         try:
