@@ -54,6 +54,9 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         if not user_text:
             return
 
+        if reply_to is not None:
+            save_club_event(str(reply_to.id), str(channel.id), str(author), user_text)
+
         async with channel.typing():
             try:
                 reply = await generate_reply(
@@ -83,7 +86,6 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         save_message(character_name, str(author), user_text, str(author.id))
         save_message(character_name, display_name, reply, str(author.id))
         if reply_to is not None:
-            save_club_event(str(reply_to.id), str(channel.id), str(author), user_text)
             sent_message = await reply_to.reply(reply[:1900], mention_author=False)
         else:
             sent_message = await channel.send(reply[:1900])
