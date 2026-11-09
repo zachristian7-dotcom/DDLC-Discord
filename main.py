@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 import re
 
 import discord
@@ -28,7 +29,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 
-def create_character_bot(character_name: str) -> commands.Bot:
+def create_character_bot(character_name: str, active_character_names: list[str]) -> commands.Bot:
     character = load_character(character_name)
     display_name = character["name"]
     prefixes = {
@@ -155,16 +156,34 @@ def create_character_bot(character_name: str) -> commands.Bot:
         if message.author.bot:
             return
 
-        # Each account only answers when directly mentioned, avoiding four
-        # characters replying to every ordinary message in the server.
-        if bot.user and bot.user in message.mentions:
-            content = message.content
-            content = re.sub(rf"<@!?{bot.user.id}>", "", content).strip()
-            if content:
-                await respond(message.channel, message.author, content, reply_to=message)
-                return
+        # Keep all existing character commands separate from group chat.
+        all_prefixes = ("!s ", "!n ", "!y ", "!m ")
+        if message.content.startswith(all_prefixes):
+            await bot.process_commands(message)
+            return
 
-        await bot.process_commands(message)
+        content = message.content
+        # Remove any bot mentions so the characters receive the actual message.
+        for mentioned_user in message.mentions:
+            if mentioned_user.bot:
+                content = re.sub(rf"<@!?{mentioned_user.id}>", "", content)
+        content = content.strip()
+        if not content or not active_character_names:
+            return
+
+        # Every bot receives the same Discord message ID, so this seeded draw
+        # gives every account the exact same random group selection.
+        rng = random.Random(message.id)
+        response_count = rng.randint(1, len(active_character_names))
+        selected_characters = rng.sample(active_character_names, response_count)
+
+        if character_name in selected_characters:
+            await respond(
+                message.channel,
+                message.author,
+                content,
+                reply_to=message,
+            )
 
     return bot
 
@@ -216,7 +235,7 @@ async def main():
     initialize_database()
     health_runner = await start_health_server()
     bots = {
-        name: create_character_bot(name)
+        name: create_character_bot(name, sorted(active_tokens))
         for name in active_tokens
     }
 
