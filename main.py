@@ -25,6 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ddlc-bots")
 
+# Filled as each Discord account becomes ready. Shared by all bot instances.
+CHARACTER_USER_IDS: dict[int, str] = {}
+
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -45,14 +48,20 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         help_command=None,
     )
 
-    async def respond(channel, author, user_text, reply_to=None):
+    async def respond(channel, author, user_text, reply_to=None, interaction_role="addressed", other_responders=None):
         user_text = user_text.strip()
         if not user_text:
             return
 
         async with channel.typing():
             try:
-                reply = await generate_reply(character_name, user_text, str(author.id))
+                reply = await generate_reply(
+                    character_name,
+                    user_text,
+                    str(author.id),
+                    interaction_role=interaction_role,
+                    other_responders=other_responders or [],
+                )
             except AIUnavailableError:
                 error_text = "I'm online, but my AI connection hasn't been configured yet."
                 if reply_to is not None:
@@ -78,6 +87,8 @@ def create_character_bot(character_name: str, active_character_names: list[str])
 
     @bot.event
     async def on_ready():
+        if bot.user is not None:
+            CHARACTER_USER_IDS[bot.user.id] = character_name
         logger.info(
             "%s is online as %s (ID: %s)",
             display_name,
@@ -156,33 +167,71 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         if message.author.bot:
             return
 
-        # Keep all existing character commands separate from group chat.
+        # Commands remain private to the character whose prefix was used.
         all_prefixes = ("!s ", "!n ", "!y ", "!m ")
         if message.content.startswith(all_prefixes):
             await bot.process_commands(message)
             return
 
-        content = message.content
-        # Remove any bot mentions so the characters receive the actual message.
-        for mentioned_user in message.mentions:
-            if mentioned_user.bot:
-                content = re.sub(rf"<@!?{mentioned_user.id}>", "", content)
-        content = content.strip()
-        if not content or not active_character_names:
+        if not active_character_names:
             return
 
-        # Every bot receives the same Discord message ID, so this seeded draw
-        # gives every account the exact same random group selection.
+        # A direct mention or a reply to a doki establishes the addressee.
+        addressed = {
+            CHARACTER_USER_IDS[user.id]
+            for user in message.mentions
+            if user.id in CHARACTER_USER_IDS
+            and CHARACTER_USER_IDS[user.id] in active_character_names
+        }
+
+        if message.reference is not None:
+            referenced = message.reference.resolved
+            if referenced is None and message.reference.message_id is not None:
+                try:
+                    referenced = await message.channel.fetch_message(
+                        message.reference.message_id
+                    )
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    referenced = None
+            if referenced is not None:
+                target_name = CHARACTER_USER_IDS.get(referenced.author.id)
+                if target_name in active_character_names:
+                    addressed.add(target_name)
+
+        content = message.content
+        for mentioned_user in message.mentions:
+            if mentioned_user.id in CHARACTER_USER_IDS:
+                content = re.sub(rf"<@!?{mentioned_user.id}>", "", content)
+        content = content.strip()
+        if not content:
+            return
+
+        # All four accounts derive the same selection from the message ID.
+        # Addressed character(s) are guaranteed a place; random extras may join.
         rng = random.Random(message.id)
-        response_count = rng.randint(1, len(active_character_names))
-        selected_characters = rng.sample(active_character_names, response_count)
+        if addressed:
+            guaranteed = sorted(addressed)
+            remaining = [name for name in active_character_names if name not in addressed]
+            response_count = rng.randint(len(guaranteed), len(active_character_names))
+            extras = rng.sample(remaining, response_count - len(guaranteed))
+            selected_characters = guaranteed + extras
+        else:
+            response_count = rng.randint(1, len(active_character_names))
+            selected_characters = rng.sample(active_character_names, response_count)
 
         if character_name in selected_characters:
+            role = "addressed" if character_name in addressed else (
+                "lead" if not addressed and character_name == selected_characters[0]
+                else "joining"
+            )
+            others = [name.title() for name in selected_characters if name != character_name]
             await respond(
                 message.channel,
                 message.author,
                 content,
                 reply_to=message,
+                interaction_role=role,
+                other_responders=others,
             )
 
     return bot
