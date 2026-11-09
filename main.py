@@ -7,7 +7,13 @@ import discord
 from aiohttp import web
 from discord.ext import commands
 
-from config import AI_BASE_URL, AI_MODEL, CHARACTER_TOKENS
+from config import (
+    AI_BASE_URL,
+    AI_MODEL,
+    CHARACTER_TOKENS,
+    CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_API_TOKEN,
+)
 from engine.conversation import AIUnavailableError, generate_reply
 from engine.memory import delete_memory, get_memories, initialize_database, save_memory, save_message
 from engine.personality import load_character
@@ -72,7 +78,10 @@ def create_character_bot(character_name: str) -> commands.Bot:
         )
         logger.info(
             "AI provider configured: %s",
-            bool(AI_BASE_URL and AI_MODEL),
+            bool(
+                (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)
+                or (AI_BASE_URL and AI_MODEL)
+            ),
         )
 
     @bot.command(name="chat")
@@ -124,7 +133,10 @@ def create_character_bot(character_name: str) -> commands.Bot:
 
     @bot.command(name="status")
     async def status_command(ctx):
-        ai_ready = bool(AI_BASE_URL and AI_MODEL)
+        ai_ready = bool(
+            (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)
+            or (AI_BASE_URL and AI_MODEL)
+        )
         await ctx.reply(
             f"{display_name} is online. AI mode: "
             f"**{'configured' if ai_ready else 'not configured yet'}**.",
