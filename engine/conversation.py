@@ -1,4 +1,5 @@
 import aiohttp
+import re
 
 from config import (
     AI_API_KEY,
@@ -80,6 +81,27 @@ def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
         return "That's interesting! I'd love to hear more about what you think."
 
     return "That's interesting! Tell me more."
+
+
+def _keep_only_character_dialogue(reply: str, character_name: str) -> str:
+    """Reject or isolate accidental multi-character scripts from a single bot."""
+    names = ("Sayori", "Natsuki", "Yuri", "Monika")
+    label_pattern = re.compile(
+        r"(?im)(?:^|\\s)(?:\\*\\*)?(Sayori|Natsuki|Yuri|Monika)(?:\\*\\*)?\\s*:",
+    )
+    matches = list(label_pattern.finditer(reply))
+    if not matches:
+        return reply.strip()
+
+    wanted = character_name.strip().lower()
+    for index, match in enumerate(matches):
+        if match.group(1).lower() == wanted:
+            start = match.end()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(reply)
+            return reply[start:end].strip(" \\n*_")
+    raise RuntimeError(
+        f"Model returned dialogue for other club members instead of {character_name}."
+    )
 
 
 class AIUnavailableError(Exception):
@@ -193,11 +215,10 @@ async def generate_reply(
     }.get(interaction_role, "")
 
     group_note = (
-        "Other characters selected to respond this turn: "
-        + ", ".join(other_responders)
-        + ". They have their own voices; do not imitate them."
-        if other_responders else
-        "You are the only character responding in this turn."
+        "This is a group conversation. Other club members may also participate, "
+        "but you are responsible for exactly one character's message: your own. "
+        "Never write, quote, summarize as dialogue, or invent lines for another "
+        "club member. Do not produce a multi-speaker script."
     )
 
     system_prompt = (
@@ -247,6 +268,12 @@ async def generate_reply(
         "when relevant. Never invent memories, shared experiences, personal events, "
         "or knowledge about the user. If you are unsure about a fact, say so naturally. "
         "Do not claim to have done things outside the chat.\n\n"
+        "OUTPUT CONTRACT: Output only your own in-character Discord message. Never prefix it "
+        "with your name, a speaker label, or markdown heading. Never write dialogue for "
+        "Sayori, Natsuki, Yuri, or Monika other than yourself. Never format the answer as "
+        "a script, transcript, roleplay log, or sequence of character turns. If another "
+        "character would have something to say, leave that for their separate bot response. "
+        "One bot account equals one character voice and one message.\\n\\n"
         "DISTINCT VOICES: Sayori, Natsuki, Yuri, and Monika must not sound interchangeable. "
         "Do not borrow another character's signature habits. Keep this character's "
         "own worldview and conversational instincts even when discussing the same topic. "
@@ -353,6 +380,8 @@ async def generate_reply(
             reply = reply_value.strip() if isinstance(reply_value, str) else ""
         except (KeyError, IndexError, TypeError, AttributeError):
             raise RuntimeError("The AI provider returned an unexpected response.")
+
+    reply = _keep_only_character_dialogue(reply, character["name"])
 
     if not reply:
         if cloudflare_configured:
