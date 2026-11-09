@@ -412,7 +412,7 @@ async def generate_reply(
             "model": AI_MODEL,
             "messages": messages,
             "temperature": 0.85,
-            "max_tokens": 160,
+            "max_tokens": 130,
         }
 
     timeout = aiohttp.ClientTimeout(total=90)
