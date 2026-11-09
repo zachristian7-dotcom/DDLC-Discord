@@ -9,7 +9,7 @@ from config import (
     CLOUDFLARE_AI_MODEL,
     CLOUDFLARE_API_TOKEN,
 )
-from engine.memory import get_memories, get_recent_messages, get_recent_club_events
+from engine.memory import get_memories, get_recent_messages, get_recent_club_events, get_recent_user_messages
 from engine.personality import load_character
 
 
@@ -81,6 +81,84 @@ def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
         return "That's interesting! I'd love to hear more about what you think."
 
     return "That's interesting! Tell me more."
+
+
+
+def _build_user_style_guidance(samples, current_message: str, character_name: str) -> str:
+    """Infer broad, low-risk typing preferences without copying the user's wording."""
+    cleaned = []
+    for sample in list(samples or []) + [current_message]:
+        if isinstance(sample, str):
+            sample = sample.strip()
+            if sample and sample not in cleaned:
+                cleaned.append(sample)
+    cleaned = cleaned[-12:]
+    if len(cleaned) < 4:
+        return (
+            "USER STYLE ADAPTATION: You have only a little evidence so far. "
+            "Keep your established character voice and make replies concise; "
+            "do not guess at the user's habits."
+        )
+
+    words_per_message = [
+        len(re.findall(r"\\b[\\w']+\\b", sample))
+        for sample in cleaned
+    ]
+    average_words = sum(words_per_message) / len(words_per_message)
+    letters = "".join(ch for sample in cleaned for ch in sample if ch.isalpha())
+    lowercase_ratio = (
+        sum(ch.islower() for ch in letters) / len(letters) if letters else 0.5
+    )
+    question_ratio = sum("?" in sample for sample in cleaned) / len(cleaned)
+    exclamation_ratio = sum("!" in sample for sample in cleaned) / len(cleaned)
+    has_emoji = any(
+        any(ord(ch) > 0x1F000 for ch in sample)
+        for sample in cleaned
+    )
+    has_lol = any(
+        re.search(r"\\b(lol|lmao|😭|💀|ngl|tbh|imo|idk)\\b", sample, re.I)
+        for sample in cleaned
+    )
+
+    if average_words <= 10:
+        length_note = "The user's messages are usually very short; favor quick, natural replies."
+    elif average_words <= 22:
+        length_note = "The user's messages are usually short-to-medium; keep most replies around one to three sentences."
+    elif average_words <= 45:
+        length_note = "The user's messages are often moderately detailed; respond proportionally, without padding."
+    else:
+        length_note = "The user sometimes writes detailed messages; match the topic's depth, but do not turn every reply into an essay."
+
+    style_traits = [length_note]
+    if lowercase_ratio >= 0.8:
+        style_traits.append("The user often writes in lowercase; relaxed lowercase is acceptable when it fits your own voice.")
+    elif lowercase_ratio <= 0.35:
+        style_traits.append("The user generally uses standard capitalization; keep your own punctuation natural.")
+    if question_ratio < 0.25:
+        style_traits.append("The user does not often use questions; do not force a question into every reply.")
+    if exclamation_ratio >= 0.4:
+        style_traits.append("The user sometimes uses emphatic punctuation; occasional energy is welcome, not constant overuse.")
+    if has_emoji:
+        style_traits.append("The user sometimes uses emoji; use them sparingly and only if they suit your character.")
+    if has_lol:
+        style_traits.append("The user uses casual internet shorthand; understand it naturally, but do not imitate every slang term.")
+
+    character_limits = {
+        "sayori": "Sayori may reflect the user's casual rhythm with warmth and spontaneity, while keeping her own expressive, upbeat-but-variable voice.",
+        "natsuki": "Natsuki may adopt concise, casual phrasing, but keep her blunt confidence and distinct dry humor; do not copy the user's exact slang.",
+        "yuri": "Yuri may become less formal when the user is casual, but retain her careful word choice and reserved rhythm; do not force lowercase or slang.",
+        "monika": "Monika may relax her phrasing and pacing to meet the user halfway, while keeping her clear, socially confident voice.",
+    }.get(character_name.lower(), "Adapt lightly while preserving the character's own voice.")
+
+    return (
+        "ADAPTIVE USER TYPING PREFERENCES (learned from recent messages; secondary to canon):\\n"
+        + "\\n".join(f"- {trait}" for trait in style_traits)
+        + f"\\n- Character-specific boundary: {character_limits}\\n"
+        "- Treat these as soft tendencies, not rules. Adapt gradually as more messages arrive. "
+        "Never copy the user's sentences, catchphrases, typos, or exact phrasing; learn only broad "
+        "rhythm and formatting preferences. Do not infer personality, identity, mood, or private "
+        "facts from typing style. Your own character profile always takes priority."
+    )
 
 
 def _keep_only_character_dialogue(reply: str, character_name: str) -> str:
@@ -285,6 +363,11 @@ async def generate_reply(
         get_recent_club_events(channel_id, limit=16)
         if channel_id else get_recent_messages(character_name, user_id, limit=12)
     )
+    user_style_samples = get_recent_user_messages(user_id, limit=12)
+    style_guidance = _build_user_style_guidance(
+        user_style_samples, user_message, character_name
+    )
+    system_prompt += f"\\n\\n{style_guidance}"
     if memories:
         saved_facts = "\n".join(f"- {item[2]}" for item in memories[:20])
         system_prompt += f"\n\nThings this user has explicitly asked you to remember:\n{saved_facts}"
@@ -316,7 +399,7 @@ async def generate_reply(
         payload = {
             "messages": messages,
             "temperature": 0.85,
-            "max_tokens": 300,
+            "max_tokens": 160,
             # Gemma 4 enables reasoning by default. Disable it for concise,
             # direct character dialogue so the output budget is used for the reply.
             "chat_template_kwargs": {"enable_thinking": False},
@@ -329,7 +412,7 @@ async def generate_reply(
             "model": AI_MODEL,
             "messages": messages,
             "temperature": 0.85,
-            "max_tokens": 220,
+            "max_tokens": 160,
         }
 
     timeout = aiohttp.ClientTimeout(total=90)
