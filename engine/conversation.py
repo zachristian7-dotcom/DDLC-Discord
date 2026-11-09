@@ -86,7 +86,13 @@ class AIUnavailableError(Exception):
     """Raised when no AI provider has been configured."""
 
 
-async def generate_reply(character_name: str, user_message: str, user_id: str) -> str:
+async def generate_reply(
+    character_name: str,
+    user_message: str,
+    user_id: str,
+    interaction_role: str = "addressed",
+    other_responders=None,
+) -> str:
     """Generate a character-specific reply using Cloudflare or the legacy provider."""
     memories = get_memories(character_name, user_id, limit=20)
 
@@ -97,6 +103,7 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
         return _offline_reply(character_name, user_message, memories)
 
     character = load_character(character_name)
+    other_responders = other_responders or []
     chat_style = character.get("chat_style", {})
     profile_sections = [
         _format_profile_section("Canon role", character.get("canon_role")),
@@ -165,6 +172,34 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
     }
     character_voice = voice_notes.get(character_name.lower(), "")
 
+    role_guidance = {
+        "addressed": (
+            "TURN ROLE: The user directly addressed you. You are the main person "
+            "they are speaking to. Respond to their actual message naturally."
+        ),
+        "lead": (
+            "TURN ROLE: No character was directly addressed. You were randomly "
+            "chosen to lead this group-chat turn. Give a natural first reaction; "
+            "do not pretend the user specifically called your name."
+        ),
+        "joining": (
+            "TURN ROLE: You were randomly selected to join a group-chat turn, but "
+            "the user did not directly address you. You are a participant, not the "
+            "main addressee. Add a brief, distinct reaction or perspective that "
+            "fits your personality. Do not act as though the user's question was "
+            "specifically directed at you, repeat a generic response, or force "
+            "yourself into the conversation."
+        ),
+    }.get(interaction_role, "")
+
+    group_note = (
+        "Other characters selected to respond this turn: "
+        + ", ".join(other_responders)
+        + ". They have their own voices; do not imitate them."
+        if other_responders else
+        "You are the only character responding in this turn."
+    )
+
     system_prompt = (
         f"You are {character['name']} from Doki Doki Literature Club. "
         "Portray this specific character faithfully. The character profile is your "
@@ -178,6 +213,7 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
         "sensitive emotional topics with care and do not romanticize suffering.\n\n"
         f"{profile}\n\n"
         f"{character_voice}\n\n"
+        f"{role_guidance}\n{group_note}\n\n"
         "NATURAL CONVERSATION RULES: This is an ongoing Discord conversation, not a "
         "question-answer session or customer-support exchange. Respond to what the "
         "person actually said, including its mood, context, and level of seriousness. "
