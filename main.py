@@ -17,6 +17,7 @@ from config import (
 )
 from engine.conversation import AIUnavailableError, generate_reply
 from engine.memory import delete_memory, get_memories, initialize_database, save_memory, save_message
+from engine.participation import select_participants
 from engine.personality import load_character
 
 logging.basicConfig(
@@ -206,18 +207,20 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         if not content:
             return
 
-        # All four accounts derive the same selection from the message ID.
-        # Addressed character(s) are guaranteed a place; random extras may join.
-        rng = random.Random(message.id)
-        if addressed:
-            guaranteed = sorted(addressed)
-            remaining = [name for name in active_character_names if name not in addressed]
-            response_count = rng.randint(len(guaranteed), len(active_character_names))
-            extras = rng.sample(remaining, response_count - len(guaranteed))
-            selected_characters = guaranteed + extras
-        else:
-            response_count = rng.randint(1, len(active_character_names))
-            selected_characters = rng.sample(active_character_names, response_count)
+        # Every bot uses the same message ID and profile data, so participant
+        # selection is consistent across accounts. Direct addressees are mandatory;
+        # topic relevance influences which optional club members join.
+        profiles = {
+            name: load_character(name)
+            for name in active_character_names
+        }
+        selected_characters = select_participants(
+            message.id,
+            active_character_names,
+            addressed,
+            content,
+            profiles,
+        )
 
         if character_name in selected_characters:
             role = "addressed" if character_name in addressed else (
