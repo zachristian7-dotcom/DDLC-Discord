@@ -138,30 +138,30 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
         messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
 
+    headers = {"Content-Type": "application/json"}
+
     if cloudflare_configured:
-        # Workers AI's OpenAI-compatible Chat Completions endpoint.
+        # Use the native Workers AI endpoint tested successfully for this model.
         api_url = (
             "https://api.cloudflare.com/client/v4/accounts/"
-            f"{CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions"
+            f"{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_AI_MODEL}"
         )
-        headers = {
-            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
-            "Content-Type": "application/json",
+        headers["Authorization"] = f"Bearer {CLOUDFLARE_API_TOKEN}"
+        payload = {
+            "messages": messages,
+            "temperature": 0.85,
+            "max_tokens": 220,
         }
-        model = CLOUDFLARE_AI_MODEL
     else:
         api_url = f"{AI_BASE_URL}/chat/completions"
-        headers = {"Content-Type": "application/json"}
         if AI_API_KEY:
             headers["Authorization"] = f"Bearer {AI_API_KEY}"
-        model = AI_MODEL
-
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.85,
-        "max_tokens": 220,
-    }
+        payload = {
+            "model": AI_MODEL,
+            "messages": messages,
+            "temperature": 0.85,
+            "max_tokens": 220,
+        }
 
     timeout = aiohttp.ClientTimeout(total=90)
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -177,12 +177,31 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
                 )
             data = await response.json()
 
-    try:
-        reply = data["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError, AttributeError):
-        raise RuntimeError("The AI provider returned an unexpected response.")
+    if cloudflare_configured:
+        result = data.get("result") or {}
+        reply_value = result.get("response")
+        if isinstance(reply_value, str):
+            reply = reply_value.strip()
+        else:
+            raise RuntimeError(
+                "Cloudflare returned an unexpected response structure. "
+                f"Top-level fields: {', '.join(data.keys())}"
+            )
+    else:
+        try:
+            reply_value = data["choices"][0]["message"]["content"]
+            reply = reply_value.strip() if isinstance(reply_value, str) else ""
+        except (KeyError, IndexError, TypeError, AttributeError):
+            raise RuntimeError("The AI provider returned an unexpected response.")
 
     if not reply:
+        if cloudflare_configured:
+            result = data.get("result") or {}
+            usage = result.get("usage") or {}
+            raise RuntimeError(
+                "Cloudflare returned an empty response text. "
+                f"Usage metadata: {usage}"
+            )
         raise RuntimeError("The AI provider returned an empty reply.")
 
     return reply[:1900]
