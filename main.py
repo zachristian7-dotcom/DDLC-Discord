@@ -44,7 +44,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
         help_command=None,
     )
 
-    async def respond(channel, author, user_text):
+    async def respond(channel, author, user_text, reply_to=None):
         user_text = user_text.strip()
         if not user_text:
             return
@@ -53,20 +53,27 @@ def create_character_bot(character_name: str) -> commands.Bot:
             try:
                 reply = await generate_reply(character_name, user_text, str(author.id))
             except AIUnavailableError:
-                await channel.send(
-                    "I'm online, but my AI connection hasn't been configured yet."
-                )
+                error_text = "I'm online, but my AI connection hasn't been configured yet."
+                if reply_to is not None:
+                    await reply_to.reply(error_text, mention_author=False)
+                else:
+                    await channel.send(error_text)
                 return
             except Exception:
                 logger.exception("Reply generation failed for %s", character_name)
-                await channel.send(
-                    "Sorry! I couldn't reach the AI service just now. Please try again."
-                )
+                error_text = "Sorry! I couldn't reach the AI service just now. Please try again."
+                if reply_to is not None:
+                    await reply_to.reply(error_text, mention_author=False)
+                else:
+                    await channel.send(error_text)
                 return
 
         save_message(character_name, str(author), user_text, str(author.id))
         save_message(character_name, display_name, reply, str(author.id))
-        await channel.send(reply[:1900])
+        if reply_to is not None:
+            await reply_to.reply(reply[:1900], mention_author=False)
+        else:
+            await channel.send(reply[:1900])
 
     @bot.event
     async def on_ready():
@@ -86,7 +93,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
 
     @bot.command(name="chat")
     async def chat_command(ctx, *, message=""):
-        await respond(ctx.channel, ctx.author, message)
+        await respond(ctx.channel, ctx.author, message, reply_to=ctx.message)
 
     @bot.command(name="remember")
     async def remember_command(ctx, *, fact=""):
@@ -154,7 +161,7 @@ def create_character_bot(character_name: str) -> commands.Bot:
             content = message.content
             content = re.sub(rf"<@!?{bot.user.id}>", "", content).strip()
             if content:
-                await respond(message.channel, message.author, content)
+                await respond(message.channel, message.author, content, reply_to=message)
                 return
 
         await bot.process_commands(message)
