@@ -214,20 +214,55 @@ def create_character_bot(character_name: str, active_character_names: list[str])
         if not content:
             return
 
-        # Every bot uses the same message ID and profile data, so participant
-        # selection is consistent across accounts. Direct addressees are mandatory;
-        # topic relevance influences which optional club members join.
-        profiles = {
-            name: load_character(name)
-            for name in active_character_names
-        }
-        selected_characters = select_participants(
-            message.id,
-            active_character_names,
-            addressed,
-            content,
-            profiles,
-        )
+        # Private conversations never use random group participation.
+        # A DM is delivered to this bot account, so its character always replies.
+        # In a private server channel, directly addressed characters are guaranteed.
+        # If exactly one active doki can view the channel, that character is the
+        # implicit recipient. If several can view it and nobody is addressed,
+        # do not guess or randomly involve the others.
+        is_private_channel = isinstance(message.channel, discord.DMChannel)
+        if isinstance(message.channel, discord.Thread):
+            is_private_channel = message.channel.is_private()
+        elif isinstance(message.channel, discord.TextChannel):
+            default_role = message.guild.default_role
+            is_private_channel = not message.channel.permissions_for(
+                default_role
+            ).view_channel
+
+        if is_private_channel:
+            if isinstance(message.channel, discord.DMChannel):
+                selected_characters = [character_name]
+            elif addressed:
+                selected_characters = sorted(addressed)
+            else:
+                visible_characters = []
+                for bot_user_id, bot_character in CHARACTER_USER_IDS.items():
+                    if bot_character not in active_character_names:
+                        continue
+                    member = message.guild.get_member(bot_user_id)
+                    if member is None:
+                        continue
+                    if message.channel.permissions_for(member).view_channel:
+                        visible_characters.append(bot_character)
+                visible_characters = sorted(set(visible_characters))
+                selected_characters = (
+                    visible_characters if len(visible_characters) == 1 else []
+                )
+        else:
+            # Public group channels use consistent, relevance-aware random
+            # participation. Every bot derives the same selection from the
+            # Discord message ID and the same character profiles.
+            profiles = {
+                name: load_character(name)
+                for name in active_character_names
+            }
+            selected_characters = select_participants(
+                message.id,
+                active_character_names,
+                addressed,
+                content,
+                profiles,
+            )
 
         if character_name in selected_characters:
             role = "addressed" if character_name in addressed else (
