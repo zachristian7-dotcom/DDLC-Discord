@@ -101,7 +101,7 @@ def _build_user_style_guidance(samples, current_message: str, character_name: st
         )
 
     words_per_message = [
-        len(re.findall(r"\\b[\\w']+\\b", sample))
+        len(re.findall(r"\b[\w']+\b", sample))
         for sample in cleaned
     ]
     average_words = sum(words_per_message) / len(words_per_message)
@@ -115,8 +115,8 @@ def _build_user_style_guidance(samples, current_message: str, character_name: st
         any(ord(ch) > 0x1F000 for ch in sample)
         for sample in cleaned
     )
-    has_lol = any(
-        re.search(r"\\b(lol|lmao|😭|💀|ngl|tbh|imo|idk)\\b", sample, re.I)
+    has_slang = any(
+        re.search(r"\b(lol|lmao|ngl|tbh|imo|idk)\b", sample, re.I)
         for sample in cleaned
     )
 
@@ -140,7 +140,7 @@ def _build_user_style_guidance(samples, current_message: str, character_name: st
         style_traits.append("The user sometimes uses emphatic punctuation; occasional energy is welcome, not constant overuse.")
     if has_emoji:
         style_traits.append("The user sometimes uses emoji; use them sparingly and only if they suit your character.")
-    if has_lol:
+    if has_slang:
         style_traits.append("The user uses casual internet shorthand; understand it naturally, but do not imitate every slang term.")
 
     character_limits = {
@@ -151,9 +151,9 @@ def _build_user_style_guidance(samples, current_message: str, character_name: st
     }.get(character_name.lower(), "Adapt lightly while preserving the character's own voice.")
 
     return (
-        "ADAPTIVE USER TYPING PREFERENCES (learned from recent messages; secondary to canon):\\n"
-        + "\\n".join(f"- {trait}" for trait in style_traits)
-        + f"\\n- Character-specific boundary: {character_limits}\\n"
+        "ADAPTIVE USER TYPING PREFERENCES (learned from recent messages; secondary to canon):\n"
+        + "\n".join(f"- {trait}" for trait in style_traits)
+        + f"\n- Character-specific boundary: {character_limits}\n"
         "- Treat these as soft tendencies, not rules. Adapt gradually as more messages arrive. "
         "Never copy the user's sentences, catchphrases, typos, or exact phrasing; learn only broad "
         "rhythm and formatting preferences. Do not infer personality, identity, mood, or private "
@@ -318,7 +318,7 @@ async def generate_reply(
         "person actually said, including its mood, context, and level of seriousness. "
         "A casual remark can get a quick reaction; a meaningful or complicated topic "
         "can receive a more considered response. Most replies should be brief or "
-        "moderate in length. Do not make every reply equally polished or equally long. "
+        "Default to one or two concise sentences for ordinary Discord chat; use up to three only when the topic genuinely needs it. Do not pad a reply or explain what the user already knows. "
         "Vary rhythm, sentence structure, openings, and punctuation organically. "
         "Natural fragments and contractions are fine when they fit this character; "
         "do not insert deliberate typos, fake stutters, or random lowercase just to "
@@ -399,7 +399,7 @@ async def generate_reply(
         payload = {
             "messages": messages,
             "temperature": 0.85,
-            "max_tokens": 160,
+            "max_tokens": 130,
             # Gemma 4 enables reasoning by default. Disable it for concise,
             # direct character dialogue so the output budget is used for the reply.
             "chat_template_kwargs": {"enable_thinking": False},
