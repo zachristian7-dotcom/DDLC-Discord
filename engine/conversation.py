@@ -1,6 +1,13 @@
 import aiohttp
 
-from config import AI_API_KEY, AI_BASE_URL, AI_MODEL
+from config import (
+    AI_API_KEY,
+    AI_BASE_URL,
+    AI_MODEL,
+    CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_AI_MODEL,
+    CLOUDFLARE_API_TOKEN,
+)
 from engine.memory import get_memories, get_recent_messages
 from engine.personality import load_character
 
@@ -23,7 +30,6 @@ def _format_profile_section(title: str, value) -> str:
 def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
     """Return a simple character-flavored reply when no AI provider is configured."""
     character = load_character(character_name)
-    name = character["name"]
     message = user_message.lower()
     interests = character.get("interests", [])
     if any(phrase in message for phrase in ("what do you remember", "what have you remembered", "what do you know about me")):
@@ -73,7 +79,7 @@ def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
     if character_name == "monika":
         return "That's interesting! I'd love to hear more about what you think."
 
-    return f"That's interesting! Tell me more."
+    return "That's interesting! Tell me more."
 
 
 class AIUnavailableError(Exception):
@@ -81,9 +87,13 @@ class AIUnavailableError(Exception):
 
 
 async def generate_reply(character_name: str, user_message: str, user_id: str) -> str:
-    """Generate an AI reply, or a simple character-specific reply in offline mode."""
+    """Generate a character-specific reply using Cloudflare or the legacy provider."""
     memories = get_memories(character_name, user_id, limit=20)
-    if not AI_BASE_URL or not AI_MODEL:
+
+    cloudflare_configured = bool(CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)
+    legacy_configured = bool(AI_BASE_URL and AI_MODEL)
+
+    if not cloudflare_configured and not legacy_configured:
         return _offline_reply(character_name, user_message, memories)
 
     character = load_character(character_name)
@@ -121,32 +131,47 @@ async def generate_reply(character_name: str, user_message: str, user_id: str) -
     if memories:
         saved_facts = "\n".join(f"- {item[2]}" for item in memories[:20])
         system_prompt += f"\n\nThings this user has explicitly asked you to remember:\n{saved_facts}"
+
     messages = [{"role": "system", "content": system_prompt}]
     for speaker, content, _timestamp in history:
         role = "assistant" if speaker == character["name"] else "user"
         messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
 
-    headers = {"Content-Type": "application/json"}
-    if AI_API_KEY:
-        headers["Authorization"] = f"Bearer {AI_API_KEY}"
+    if cloudflare_configured:
+        # Workers AI's OpenAI-compatible Chat Completions endpoint.
+        api_url = (
+            "https://api.cloudflare.com/client/v4/accounts/"
+            f"{CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions"
+        )
+        headers = {
+            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        model = CLOUDFLARE_AI_MODEL
+    else:
+        api_url = f"{AI_BASE_URL}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if AI_API_KEY:
+            headers["Authorization"] = f"Bearer {AI_API_KEY}"
+        model = AI_MODEL
 
     payload = {
-        "model": AI_MODEL,
+        "model": model,
         "messages": messages,
         "temperature": 0.85,
         "max_tokens": 220,
     }
 
-    timeout = aiohttp.ClientTimeout(total=45)
+    timeout = aiohttp.ClientTimeout(total=90)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
-            f"{AI_BASE_URL}/chat/completions",
+            api_url,
             json=payload,
             headers=headers,
         ) as response:
             if response.status >= 400:
-                detail = (await response.text())[:300]
+                detail = (await response.text())[:500]
                 raise RuntimeError(
                     f"AI provider returned HTTP {response.status}: {detail}"
                 )
