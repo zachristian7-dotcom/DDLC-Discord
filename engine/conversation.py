@@ -9,7 +9,7 @@ from config import (
     CLOUDFLARE_AI_MODEL,
     CLOUDFLARE_API_TOKEN,
 )
-from engine.memory import get_memories, get_recent_messages
+from engine.memory import get_memories, get_recent_messages, get_recent_club_events
 from engine.personality import load_character
 
 
@@ -114,6 +114,7 @@ async def generate_reply(
     user_id: str,
     interaction_role: str = "addressed",
     other_responders=None,
+    channel_id: str = "",
 ) -> str:
     """Generate a character-specific reply using Cloudflare or the legacy provider."""
     memories = get_memories(character_name, user_id, limit=20)
@@ -281,7 +282,10 @@ async def generate_reply(
         "natural for this particular moment."
     )
 
-    history = get_recent_messages(character_name, user_id, limit=12)
+    history = (
+        get_recent_club_events(channel_id, limit=16)
+        if channel_id else get_recent_messages(character_name, user_id, limit=12)
+    )
     if memories:
         saved_facts = "\n".join(f"- {item[2]}" for item in memories[:20])
         system_prompt += f"\n\nThings this user has explicitly asked you to remember:\n{saved_facts}"
