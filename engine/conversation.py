@@ -86,7 +86,7 @@ def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
 def _keep_only_character_dialogue(reply: str, character_name: str) -> str:
     """Reject or isolate accidental multi-character scripts from a single bot."""
     label_pattern = re.compile(
-        r"(?im)(?:^|\\s)(?:\\*\\*)?(Sayori|Natsuki|Yuri|Monika)(?:\\*\\*)?\\s*:",
+        r"(?im)(?:^|\s)(?:\*\*)?(Sayori|Natsuki|Yuri|Monika)(?:\*\*)?\s*:",
     )
     matches = list(label_pattern.finditer(reply))
     if not matches:
@@ -97,7 +97,7 @@ def _keep_only_character_dialogue(reply: str, character_name: str) -> str:
         if match.group(1).lower() == wanted:
             start = match.end()
             end = matches[index + 1].start() if index + 1 < len(matches) else len(reply)
-            return reply[start:end].strip(" \\n*_")
+            return reply[start:end].strip(" \n*_")
     raise RuntimeError(
         f"Model returned dialogue for other club members instead of {character_name}."
     )
@@ -273,7 +273,7 @@ async def generate_reply(
         "Sayori, Natsuki, Yuri, or Monika other than yourself. Never format the answer as "
         "a script, transcript, roleplay log, or sequence of character turns. If another "
         "character would have something to say, leave that for their separate bot response. "
-        "One bot account equals one character voice and one message.\\n\\n"
+        "One bot account equals one character voice and one message.\n\n"
         "DISTINCT VOICES: Sayori, Natsuki, Yuri, and Monika must not sound interchangeable. "
         "Do not borrow another character's signature habits. Keep this character's "
         "own worldview and conversational instincts even when discussing the same topic. "
