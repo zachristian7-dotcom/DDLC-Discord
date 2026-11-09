@@ -85,7 +85,6 @@ def _offline_reply(character_name: str, user_message: str, memories=()) -> str:
 
 def _keep_only_character_dialogue(reply: str, character_name: str) -> str:
     """Reject or isolate accidental multi-character scripts from a single bot."""
-    names = ("Sayori", "Natsuki", "Yuri", "Monika")
     label_pattern = re.compile(
         r"(?im)(?:^|\\s)(?:\\*\\*)?(Sayori|Natsuki|Yuri|Monika)(?:\\*\\*)?\\s*:",
     )
